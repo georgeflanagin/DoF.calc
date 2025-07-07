@@ -49,6 +49,7 @@ f_stops = ( 1.0, 1.4, 1.8, 2.0,
             5.6, 6.3, 7.1, 8.0, 
             11.0, 16.0, 22.0)
 
+
 ###
 # Credits
 ###
@@ -92,6 +93,14 @@ def thin_lens(length:float,
     across the parameters given.
     """
     global f_stops
+
+    for stop in ( x for x in f_stops if not x < max_aperture):
+        H = hyperfocal(length, stop, circle)
+        for s in intervals(H, min_dist, 20):
+            numerator = s * (H - f)
+            d_near = numerator / ( H + (s - 2 * f))
+            d_far  = numerator / ( H - s )
+
     return 
 
 
