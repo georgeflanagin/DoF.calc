@@ -18,6 +18,7 @@ if sys.version_info < min_py:
 import argparse
 from   collections.abc import *
 import contextlib
+import csv
 import getpass
 import logging
 from   logging import CRITICAL, ERROR, WARNING, INFO, DEBUG, NOTSET
@@ -70,13 +71,21 @@ def hyperfocal(focal_len:float, f:float, circle:float) -> float:
 
 def intervals(hyperfocal:float, min_dist:float, n:int) -> tuple:
     multiplier = math.pow(hyperfocal/min_dist, 1/float(n))
-    return [ min_dist * math.pow(multiplier, i) for i in range(0, n+1)]
+    yield from ( min_dist * math.pow(multiplier, i) 
+        for i in range(0, n))
 
 @trap
 def normalize_units(myargs:argparse.Namespace) -> argparse.Namespace:
-    myargs.min_dist=myargs.min_dist*1000
+
+    # Convert mm to m.
+    myargs.length /= 1000
     myargs.min_dist = max(myargs.min_dist, 2*myargs.length)
+    
+    # Most of the time, the circle of confusion dimensions are given
+    # in mm, and everything else is in m, so we need to convert.
     myargs.circle = myargs.circle/1000
+
+    print(f"{myargs=}")
 
     return myargs
 
@@ -86,8 +95,7 @@ def thin_lens(length:float,
         max_aperture:float,
         circle:float,
         min_dist:float,
-        hyperfocal:float
-        ) -> pandas.DataFrame:
+        ) -> Iterator[tuple]:
     """
     Return a data frame containing near and far focus limits 
     across the parameters given.
@@ -97,11 +105,11 @@ def thin_lens(length:float,
     for stop in ( x for x in f_stops if not x < max_aperture):
         H = hyperfocal(length, stop, circle)
         for s in intervals(H, min_dist, 20):
-            numerator = s * (H - f)
-            d_near = numerator / ( H + (s - 2 * f))
+            numerator = s * (H - length)
+            d_near = numerator / ( H + (s - 2 * length))
             d_far  = numerator / ( H - s )
 
-    return 
+            yield stop, round(H,2), round(s,2), round(d_near,3), round(d_far,3)
 
 
 @trap
@@ -112,6 +120,19 @@ def DoFcalc_main(myargs:argparse.Namespace) -> int:
     """
     myargs = normalize_units(myargs)
 
+    columns=['f-stop', 'hyperfocal', 'subj-dist', 'near-limit', 'far-limit']
+    if myargs.fmt == 'csv': 
+        with open(f"{myargs.filename}.csv", 'w', newline='') as f:
+            writer=csv.writer(f)
+            writer.writerow(columns)
+            writer.writerows(thin_lens(myargs.length, myargs.max_aperture, 
+                    myargs.circle, myargs.min_dist))
+    else:
+        frame = pandas.DataFrame(
+            thin_lens(myargs.length, myargs.max_aperture, 
+                    myargs.circle, myargs.min_dist), 
+                columns)
+        
     return os.EX_OK
 
 
@@ -153,21 +174,23 @@ you have pandas installed on this computer.
 
 
     # Arguments for this program.
-    parser.add_argument('--len', '--length', type=int, required=True,
+    parser.add_argument('-l', '--length', type=int, required=True,
         help="Focal length of the lens in mm.")
 
-    parser.add_argument('--max_aperture', type=float, required=True,
+    parser.add_argument('--max-aperture', type=float, required=True,
         help="f-stop when the lens is wide open.")
 
-    parser.add_argument('--min_dist', type=float, default=1.0, 
+    parser.add_argument('--min-dist', type=float, default=1.0, 
         help="Minimum focus distance. Defaults to 1 meter.")
 
-    parser.add_argument('--format', type=str, default='csv',
-        choices=('csv', 'eqs', 'pandas'),
-         help="Output format: csv, eqs, or pandas.")
+    parser.add_argument('--fmt', type=str, default='csv',
+        choices=('csv', 'pandas'),
+         help="Output format: csv or pandas.")
+
+    parser.add_argument('-f', '--filename', default='DoFcalc')
 
     parser.add_argument('-c', '--circle', type=float, default=15.0,
-        help="Circle of confusion. Default: 15 microns (0.015mm)")
+        help="Circle of confusion. Default: 15 microns")
 
     myargs = parser.parse_args()
     if myargs.zap:
@@ -177,7 +200,7 @@ you have pandas installed on this computer.
             pass
 
 
-    logger = URLogger(logfile=logfile, level=myargs.loglevel)
+    logger = URLogger(logfile=logfile, level=myargs.log_level)
 
     try:
         outfile = sys.stdout if not myargs.output else open(myargs.output, 'w')
