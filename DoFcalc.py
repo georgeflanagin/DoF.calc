@@ -27,8 +27,11 @@ import math
 ###
 # Installed libraries like numpy, pandas, paramiko
 ###
-import numpy
-import pandas
+try:
+    import pandas
+    has_pandas=True
+except:
+    has_pandas=False
 
 ###
 # From hpclib
@@ -45,9 +48,9 @@ from   urlogger import URLogger
 # Global objects
 ###
 logger = None
-f_stops = ( 1.0, 1.4, 1.8, 2.0, 
-            2.4, 2.8, 3.5, 4.0, 
-            5.6, 6.3, 7.1, 8.0, 
+f_stops = ( 1.0, 1.4, 1.8, 2.0,
+            2.4, 2.8, 3.5, 4.0,
+            5.6, 6.3, 7.1, 8.0,
             11.0, 16.0, 22.0)
 
 
@@ -71,7 +74,7 @@ def hyperfocal(focal_len:float, f:float, circle:float) -> float:
 
 def intervals(hyperfocal:float, min_dist:float, n:int) -> tuple:
     multiplier = math.pow(hyperfocal/min_dist, 1/float(n))
-    yield from ( min_dist * math.pow(multiplier, i) 
+    yield from ( min_dist * math.pow(multiplier, i)
         for i in range(0, n))
 
 @trap
@@ -80,12 +83,10 @@ def normalize_units(myargs:argparse.Namespace) -> argparse.Namespace:
     # Convert mm to m.
     myargs.length /= 1000
     myargs.min_dist = max(myargs.min_dist, 2*myargs.length)
-    
+
     # Most of the time, the circle of confusion dimensions are given
     # in mm, and everything else is in m, so we need to convert.
-    myargs.circle = myargs.circle/1000
-
-    print(f"{myargs=}")
+    myargs.circle = myargs.circle/1000000
 
     return myargs
 
@@ -97,7 +98,7 @@ def thin_lens(length:float,
         min_dist:float,
         ) -> Iterator[tuple]:
     """
-    Return a data frame containing near and far focus limits 
+    Return a data frame containing near and far focus limits
     across the parameters given.
     """
     global f_stops
@@ -109,7 +110,7 @@ def thin_lens(length:float,
             d_near = numerator / ( H + (s - 2 * length))
             d_far  = numerator / ( H - s )
 
-            yield stop, round(H,2), round(s,2), round(d_near,3), round(d_far,3)
+            yield stop, round(H,1), round(s,2), round(d_near-s,3), round(d_far-s,3)
 
 
 @trap
@@ -121,18 +122,20 @@ def DoFcalc_main(myargs:argparse.Namespace) -> int:
     myargs = normalize_units(myargs)
 
     columns=['f-stop', 'hyperfocal', 'subj-dist', 'near-limit', 'far-limit']
-    if myargs.fmt == 'csv': 
+    if myargs.fmt == 'csv':
         with open(f"{myargs.filename}.csv", 'w', newline='') as f:
             writer=csv.writer(f)
             writer.writerow(columns)
-            writer.writerows(thin_lens(myargs.length, myargs.max_aperture, 
-                    myargs.circle, myargs.min_dist))
+            writer.writerows(
+                thin_lens(myargs.length, myargs.max_aperture,
+                    myargs.circle, myargs.min_dist)
+                )
     else:
         frame = pandas.DataFrame(
-            thin_lens(myargs.length, myargs.max_aperture, 
-                    myargs.circle, myargs.min_dist), 
+            thin_lens(myargs.length, myargs.max_aperture,
+                    myargs.circle, myargs.min_dist),
                 columns)
-        
+
     return os.EX_OK
 
 
@@ -143,13 +146,13 @@ if __name__ == '__main__':
     configfile = f"{here}/{progname}.toml"
     logfile    = f"{here}/{progname}.log"
     lockfile   = f"{here}/{progname}.lock"
-    
-    parser = argparse.ArgumentParser(prog="DoFcalc", 
-        description="""
-What DoFcalc does, DoFcalc does best. 
 
-You supply the basic lens specs. Example: 105mm f/2 as 
---max 2 --len 105. If you know the minimum focus distance, you 
+    parser = argparse.ArgumentParser(prog="DoFcalc",
+        description="""
+What DoFcalc does, DoFcalc does best.
+
+You supply the basic lens specs. Example: 105mm f/2 becomes
+"--max 2 --len 105". If you know the minimum focus distance, you
 can supply it as --min 2.0 for 2.0 meters. The default is 1 meter.
 
 You can also supply the circle of confusion in microns, but the
@@ -158,7 +161,7 @@ default of --circle 15.0 is suitable for most modern cameras.
 The result is a chart-able csv file or a pandas data frame if
 you have pandas installed on this computer.
 
-""")
+""", formatter_class=argparse.RawDescriptionHelpFormatter)
 
 
     # Standard arguments.
@@ -168,8 +171,8 @@ you have pandas installed on this computer.
 
     parser.add_argument('-o', '--output', type=str, default="",
         help="Output file name")
-    
-    parser.add_argument('-z', '--zap', action='store_true', 
+
+    parser.add_argument('-z', '--zap', action='store_true',
         help="Remove old log file and create a new one.")
 
 
@@ -180,7 +183,7 @@ you have pandas installed on this computer.
     parser.add_argument('--max-aperture', type=float, required=True,
         help="f-stop when the lens is wide open.")
 
-    parser.add_argument('--min-dist', type=float, default=1.0, 
+    parser.add_argument('--min-dist', type=float, default=1.0,
         help="Minimum focus distance. Defaults to 1 meter.")
 
     parser.add_argument('--fmt', type=str, default='csv',
