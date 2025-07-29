@@ -110,7 +110,7 @@ def thin_lens(length:float,
             d_near = numerator / ( H + (s - 2 * length))
             d_far  = numerator / ( H - s )
 
-            yield stop, round(H,1), round(s,2), round(d_near-s,3), round(d_far-s,3)
+            yield stop, round(s,2), round(d_near-s,3), round(d_far-s,3)
 
 
 @trap
@@ -121,7 +121,7 @@ def DoFcalc_main(myargs:argparse.Namespace) -> int:
     """
     myargs = normalize_units(myargs)
 
-    columns=['f-stop', 'hyperfocal', 'subj-dist', 'near-limit', 'far-limit']
+    columns=['f-stop', 'subj-dist', 'near-limit', 'far-limit']
     if myargs.fmt == 'csv':
         with open(f"{myargs.filename}.csv", 'w', newline='') as f:
             writer=csv.writer(f)
