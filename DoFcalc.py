@@ -36,9 +36,6 @@ except:
 ###
 # From hpclib
 ###
-import linuxutils
-from   urdecorators import trap
-from   urlogger import URLogger
 
 ###
 # imports and objects that were written for this project.
@@ -53,7 +50,6 @@ f_stops = ( 1.0, 1.4, 1.8, 2.0,
             5.6, 6.3, 7.1, 8.0,
             11.0, 16.0, 22.0)
 
-
 ###
 # Credits
 ###
@@ -67,31 +63,42 @@ __status__ = 'in progress'
 __license__ = 'MIT'
 
 
-@trap
 def hyperfocal(focal_len:float, f:float, circle:float) -> float:
+    """
+    Standard formula.
+    """
     return focal_len * focal_len / f / circle
 
 
-def intervals(hyperfocal:float, min_dist:float, n:int) -> tuple:
+def intervals(hyperfocal:float, min_dist:float, n:int) -> Iterator[float]:
+    """
+    The intervals equal *ratios* from the minimum focus
+    distance to the hyperfocal.
+    """
     multiplier = math.pow(hyperfocal/min_dist, 1/float(n))
-    yield from ( min_dist * math.pow(multiplier, i)
-        for i in range(0, n))
+    yield from (
+        min_dist * math.pow(multiplier, i) for i in range(0, n)
+        )
 
-@trap
+
 def normalize_units(myargs:argparse.Namespace) -> argparse.Namespace:
+    """
+    Convert everything to meters.
+    """
 
-    # Convert mm to m.
     myargs.length /= 1000
+
+    # The minimum focus distance is twice the focal length of
+    # the lens. Just a sanity check here.
     myargs.min_dist = max(myargs.min_dist, 2*myargs.length)
 
     # Most of the time, the circle of confusion dimensions are given
-    # in mm, and everything else is in m, so we need to convert.
-    myargs.circle = myargs.circle/1000000
+    # in microns.
+    myargs.circle /= 1000000
 
     return myargs
 
 
-@trap
 def thin_lens(length:float,
         max_aperture:float,
         circle:float,
@@ -113,11 +120,10 @@ def thin_lens(length:float,
             yield stop, round(s,2), round(d_near-s,3), round(d_far-s,3)
 
 
-@trap
 def DoFcalc_main(myargs:argparse.Namespace) -> int:
     """
     Step 1 is the normalization of the different units of measure.
-        We are going to put everything in millimeters.
+        We are going to put everything in meters.
     """
     myargs = normalize_units(myargs)
 
@@ -131,10 +137,12 @@ def DoFcalc_main(myargs:argparse.Namespace) -> int:
                     myargs.circle, myargs.min_dist)
                 )
     else:
-        frame = pandas.DataFrame(
-            thin_lens(myargs.length, myargs.max_aperture,
-                    myargs.circle, myargs.min_dist),
-                columns)
+        # Not yet implemented.
+        # frame = pandas.DataFrame(
+        #     thin_lens(myargs.length, myargs.max_aperture,
+        #             myargs.circle, myargs.min_dist),
+        #         columns)
+        pass
 
     return os.EX_OK
 
@@ -143,9 +151,6 @@ if __name__ == '__main__':
 
     here       = os.getcwd()
     progname   = os.path.basename(__file__)[:-3]
-    configfile = f"{here}/{progname}.toml"
-    logfile    = f"{here}/{progname}.log"
-    lockfile   = f"{here}/{progname}.lock"
 
     parser = argparse.ArgumentParser(prog="DoFcalc",
         description="""
@@ -161,22 +166,22 @@ default of --circle 15.0 is suitable for most modern cameras.
 The result is a chart-able csv file or a pandas data frame if
 you have pandas installed on this computer.
 
+A typical line of output looks like this for an 85mm lens:
+
+f-stop|  dist|     near|   far
+------+------+---------+----------
+7.1   |  5.4 |   -0.393|   0.46
+
+which means that an 85mm lens focused at 5.4 meters and
+stopped down to f/7.1 will have a DoF that goes from
+5.007 meters to 5.86 meters.
+
 """, formatter_class=argparse.RawDescriptionHelpFormatter)
 
-
-    # Standard arguments.
-    parser.add_argument('--log-level', type=int, default=INFO,
-        choices=(CRITICAL, ERROR, WARNING, INFO, DEBUG, NOTSET),
-        help=f"Logging level, defaults to {logging.INFO}")
 
     parser.add_argument('-o', '--output', type=str, default="",
         help="Output file name")
 
-    parser.add_argument('-z', '--zap', action='store_true',
-        help="Remove old log file and create a new one.")
-
-
-    # Arguments for this program.
     parser.add_argument('-l', '--length', type=int, required=True,
         help="Focal length of the lens in mm.")
 
@@ -187,8 +192,8 @@ you have pandas installed on this computer.
         help="Minimum focus distance. Defaults to 1 meter.")
 
     parser.add_argument('--fmt', type=str, default='csv',
-        choices=('csv', 'pandas'),
-         help="Output format: csv or pandas.")
+        choices=('csv',),
+         help="Output format: csv")
 
     parser.add_argument('-f', '--filename', default='DoFcalc')
 
@@ -196,14 +201,6 @@ you have pandas installed on this computer.
         help="Circle of confusion. Default: 15 microns")
 
     myargs = parser.parse_args()
-    if myargs.zap:
-        try:
-            unlink(logfile)
-        except:
-            pass
-
-
-    logger = URLogger(logfile=logfile, level=myargs.log_level)
 
     try:
         outfile = sys.stdout if not myargs.output else open(myargs.output, 'w')
